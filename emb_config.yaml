@@ -1,0 +1,28 @@
+metric_learning_configs:
+  # Dataset parameters
+  input_dir: Datasets
+  output_dir: Datasets/EMB_output
+  pt_signal_cut: 1.
+  pt_background_cut: 1.
+  split: [1000, 92, 91] # Number of [training, validation, testing] examples
+  true_edges: modulewise_true_edges
+
+  # Model parameters
+  input_dim: 2
+  hidden_dim: 128
+  n_layers: 3
+  emb_dim: 4
+  seed: 1
+  lr: 0.001
+  factor: 0.7
+  patience: 4
+  margin: 0.1
+  activation: Tanh
+  weight: 1
+  r_max: 0.1
+  r_val: 0.1
+  r_test: 0.1
+  k_max: 20
+  query_points: signal
+  points_per_batch: 100000
+  max_epochs: 2
