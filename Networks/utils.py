@@ -22,6 +22,8 @@ def load_dataset(input_dir):
   assert os.path.exists(input_dir), "Dir {} does not exist!".format(input_dir)
   total_events = []
   for fn in os.listdir(input_dir):
+    if not fn.endswith('.pt'):
+      continue
     full_fn = os.path.join(input_dir,fn)
     events = torch.load(full_fn, map_location=torch.device("cpu"))
     if type(events)==list:

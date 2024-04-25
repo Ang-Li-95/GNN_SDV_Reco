@@ -194,7 +194,8 @@ class Embedding(L.LightningModule):
     edges = build_edges(emb_out, emb_out, indices=None, r_max = r_max, k_max = k_max)
 
     # Now we build the truth graph
-    true_edges = torch.cat([batch.true_edges,batch.true_edges.flip(0)], axis=-1)
+    #true_edges = torch.cat([batch.true_edges,batch.true_edges.flip(0)], axis=-1)
+    true_edges = batch.true_edges
     edges, edge_labels = graph_intersection(edges, true_edges)
 
     hinge, d = self.get_hinge_distance(emb_out,edges,edge_labels)
@@ -249,6 +250,14 @@ class Embedding(L.LightningModule):
       return outputs["loss"]
 
   def test_step(self, batch, batch_idx):
+      """
+      Step to evaluate the model's performance
+      """
+      outputs = self.evaluate_network(
+          batch, batch_idx, self.hparams["r_test"], 1000, log=False
+      )
+
+  def predict_step(self, batch, batch_idx):
       """
       Step to evaluate the model's performance
       """
