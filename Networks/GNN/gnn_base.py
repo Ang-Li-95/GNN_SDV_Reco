@@ -102,7 +102,8 @@ class GNNBase(L.LightningModule):
     input_d = self.make_input(batch)
 
     # Run network
-    pos_weight = torch.tensor((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() )
+    #pos_weight = torch.tensor((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() )
+    pos_weight = ((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() ).clone().detach()
     output = self(input_d['node_features'],input_d['edges']).squeeze()
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
                     output, input_d['edges_y'].float(), weight=None, pos_weight=pos_weight
@@ -121,7 +122,8 @@ class GNNBase(L.LightningModule):
     input_d = self.make_input(batch)
 
     # Run network
-    pos_weight = torch.tensor((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() )
+    #pos_weight = torch.tensor((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() )
+    pos_weight = ((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() ).clone().detach()
     output = self(input_d['node_features'],input_d['edges']).squeeze()
     # Get the score ranging from 0 to 1
     score = torch.sigmoid(output)
