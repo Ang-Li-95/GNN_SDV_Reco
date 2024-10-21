@@ -1,28 +1,27 @@
 metric_learning_configs:
   # Dataset parameters
-  input_dir: Datasets
-  output_dir: Datasets/EMB_output
-  pt_signal_cut: 1.
-  pt_background_cut: 1.
-  split: [1000, 92, 91] # Number of [training, validation, testing] examples
-  true_edges: modulewise_true_edges
+  input_dir: /scratch-cbe/users/ang.li/EMBInput/train/
+  output_dir: Dataset_split/train
+  split: [0.85, 0.1, 0.05] # Number of [training, validation, testing] examples
+  max_events_per_source: 20000
 
   # Model parameters
-  input_dim: 2
+  input_dim: 11
   hidden_dim: 128
   n_layers: 3
-  emb_dim: 4
+  emb_dim: 16
   seed: 1
-  lr: 0.001
+  lr: 0.05
   factor: 0.7
-  patience: 4
+  patience: 10
   margin: 0.1
   activation: Tanh
   weight: 1
   r_max: 0.1
   r_val: 0.1
-  r_test: 0.1
+  #r_test: 0.15
+  r_test: 0.1415
   k_max: 20
   query_points: signal
   points_per_batch: 100000
-  max_epochs: 2
+  max_epochs: 200

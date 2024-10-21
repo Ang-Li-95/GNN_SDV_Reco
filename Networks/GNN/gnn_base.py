@@ -4,7 +4,9 @@ import torch
 from torch_geometric.loader import DataLoader
 from torch.nn import Linear
 from Networks.utils import *
-import pytorch_lightning as L
+#import pytorch_lightning as L
+import lightning as L
+from lightning.pytorch.utilities import grad_norm
 from sklearn.metrics import roc_auc_score
 
 class GNNBase(L.LightningModule):
@@ -20,17 +22,23 @@ class GNNBase(L.LightningModule):
     This prepares the data.
     stage can be 'fit', 'validate', 'test', or 'predict'.
     """
-    self.trainset, self.valset, self.testset = split_dataset(input_dir=self.hparams['input_dir'],split=self.hparams['split'],seed=self.hparams['seed'])
+    self.trainset, self.valset, self.testset = split_dataset(input_dir=self.hparams['input_dir'],split=self.hparams['split'],seed=self.hparams['seed'],max_events_per_source=self.hparams['max_events_per_source'])
 
   def train_dataloader(self):
       if len(self.trainset) > 0:
-          return DataLoader(self.trainset, batch_size=1, num_workers=16)
+          return DataLoader(self.trainset, batch_size=1, num_workers=2)
       else:
           return None
 
   def val_dataloader(self):
       if len(self.valset) > 0:
-          return DataLoader(self.valset, batch_size=1, num_workers=16)
+          return DataLoader(self.valset, batch_size=1, num_workers=2)
+      else:
+          return None
+
+  def test_dataloader(self):
+      if len(self.testset) > 0:
+          return DataLoader(self.testset, batch_size=1, num_workers=2)
       else:
           return None
 
@@ -57,8 +65,8 @@ class GNNBase(L.LightningModule):
       ]
       return optimizer, scheduler
 
-  def make_input(self,batch):
-    node_features = batch.x
+  def make_input(self,batch,with_weight=False):
+    node_features = batch.x.float()
     edges = batch.pred_edges_emb
     edges_y = batch.edges_y
     
@@ -67,6 +75,12 @@ class GNNBase(L.LightningModule):
         'edges': edges,
         'edges_y': edges_y,
         }
+
+    if with_weight:
+      assert "edge_weight" in batch.keys()
+      edge_weight = batch.edge_weight.float()
+      input_d['edge_weight'] = edge_weight
+
     return input_d
 
   def log_metrics(self, score, preds, truth, batch, loss):
@@ -90,7 +104,7 @@ class GNNBase(L.LightningModule):
               "eff": eff,
               "pur": pur,
               "current_lr": current_lr,
-          }, on_epoch=True, on_step=False, batch_size=1
+          }, on_epoch=True, on_step=False, batch_size=1, sync_dist=True
       )
 
   def training_step(self, batch, batch_idx):
@@ -99,17 +113,23 @@ class GNNBase(L.LightningModule):
     """
 
     # Get input and truth information
-    input_d = self.make_input(batch)
+    if self.hparams['edge_weight'] == 'dist':
+      input_d = self.make_input(batch, with_weight=True)
+    else:
+      input_d = self.make_input(batch)
 
     # Run network
     #pos_weight = torch.tensor((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() )
     pos_weight = ((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() ).clone().detach()
     output = self(input_d['node_features'],input_d['edges']).squeeze()
+    loss_weight = None
+    if self.hparams['edge_weight'] == 'dist':
+      loss_weight = input_d['edge_weight']
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                    output, input_d['edges_y'].float(), weight=None, pos_weight=pos_weight
+                    output, input_d['edges_y'].float(), weight=loss_weight, pos_weight=pos_weight
                     )
 
-    self.log("train_loss", loss, on_epoch=True, on_step=False, batch_size=1)
+    self.log("train_loss", loss, on_epoch=True, on_step=False, batch_size=1, sync_dist=True)
 
     return loss
 
@@ -119,7 +139,10 @@ class GNNBase(L.LightningModule):
     """
 
     # Get input and truth information
-    input_d = self.make_input(batch)
+    if self.hparams['edge_weight'] == 'dist':
+      input_d = self.make_input(batch, with_weight=True)
+    else:
+      input_d = self.make_input(batch)
 
     # Run network
     #pos_weight = torch.tensor((~input_d['edges_y'].bool()).sum() / input_d['edges_y'].sum() )
@@ -129,9 +152,20 @@ class GNNBase(L.LightningModule):
     score = torch.sigmoid(output)
     preds = score > self.hparams["edge_cut"]
 
+    loss_weight = None
+    if self.hparams['edge_weight'] == 'dist':
+      loss_weight = input_d['edge_weight']
     loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                    output, input_d['edges_y'].float(), weight=None, pos_weight=pos_weight
+                    output, input_d['edges_y'].float(), weight=loss_weight, pos_weight=pos_weight
                     )
+
+    #if score.isnan().any():
+    #  print("pos_weight: {}".format(pos_weight.isnan().any()))
+    #  print("edges_y: {}".format(input_d['edges_y'].sum()))
+    #  print("output nan: {}".format(output.isnan().any()))
+    #  print(output)
+    #  print("node_features nan: {}".format(input_d['node_features'].isnan().any()))
+    #  print(input_d)
 
     if log:
         self.log_metrics(score, preds, input_d['edges_y'], batch, loss)
@@ -173,3 +207,9 @@ class GNNBase(L.LightningModule):
       )
 
       return outputs
+
+  #def on_before_optimizer_step(self, optimizer):
+  #    # Compute the 2-norm for each layer
+  #    # If using mixed precision, the gradients are already unscaled here
+  #    norms = grad_norm(self.node_update, norm_type=2)
+  #    self.log_dict(norms,prog_bar=True)

@@ -18,15 +18,37 @@ if torch.cuda.is_available():
 else:
     device = "cpu"
 
-def load_dataset(input_dir):
+def load_dataset(input_dir,max_events_per_source=None):
   assert os.path.exists(input_dir), "Dir {} does not exist!".format(input_dir)
   total_events = []
-  for fn in os.listdir(input_dir):
-    if not fn.endswith('.pt'):
-      continue
-    full_fn = os.path.join(input_dir,fn)
+  if os.path.isdir(input_dir):
+    for fn in os.listdir(input_dir):
+    #for root, dirs, fns in os.walk(input_dir):
+    #  for fn in fns:
+        if not fn.endswith('.pt'):
+          continue
+        full_fn = os.path.join(input_dir,fn)
+        events = torch.load(full_fn, map_location=torch.device("cpu"))
+        if type(events)==list or type(events)==torch.utils.data.dataset.Subset:
+          if max_events_per_source is not None:
+            events_take = min(max_events_per_source,len(events))
+            if not type(events)==list:
+              events = list(events)
+            events = events[:events_take]
+          total_events += events
+        elif type(events)==Data:
+          total_events.append(events)
+        else:
+          raise TypeError("Unrecognized data type.")
+  elif os.path.isfile(input_dir):
+    full_fn = input_dir
+    if not full_fn.endswith('.pt'):
+      raise TypeError("Unrecognized data file {}.".format(full_fn))
     events = torch.load(full_fn, map_location=torch.device("cpu"))
-    if type(events)==list:
+    if type(events)==list or type(events)==torch.utils.data.dataset.Subset:
+      if max_events_per_source is not None:
+        events_take = min(max_events_per_source,len(events))
+        events = events[:events_take]
       total_events += events
     elif type(events)==Data:
       total_events.append(events)
@@ -34,10 +56,10 @@ def load_dataset(input_dir):
       raise TypeError("Unrecognized data type.")
   return total_events
 
-def split_dataset(input_dir,split,seed=None):
+def split_dataset(input_dir,split,seed=None,max_events_per_source=None):
   if seed:
     torch.manual_seed(seed)
-  dataset = load_dataset(input_dir)
+  dataset = load_dataset(input_dir,max_events_per_source)
   train_events, val_events, test_events = random_split(dataset, split)
   return train_events, val_events, test_events
 
@@ -81,6 +103,9 @@ def build_edges(query_nodes,all_nodes,indices=None, r_max=1.0, k_max=10, return_
         index = faiss.IndexFlatL2(all_nodes.shape[1])
         index.add(all_nodes)
         d2, idx = index.search(query_nodes, k_max) 
+    #index = faiss.IndexFlatL2(all_nodes.shape[1])
+    #index.add(all_nodes)
+    #d2, idx = index.search(query_nodes, k_max) 
 
     # Now constrct a tensor that represent the indices of query nodes
     query_idx = torch.Tensor.repeat(
@@ -104,8 +129,14 @@ def build_edges(query_nodes,all_nodes,indices=None, r_max=1.0, k_max=10, return_
 def graph_intersection(
     pred_graph, truth_graph, using_weights=False, weights_bidir=None
 ):
-
-    array_size = max(pred_graph.max().item(), truth_graph.max().item()) + 1
+    if pred_graph.shape[1]==0 and truth_graph.shape[1]==0:
+      array_size = 1
+    elif pred_graph.shape[1]==0:
+      array_size = truth_graph.max().item() + 1
+    elif truth_graph.shape[1]==0:
+      array_size = pred_graph.max().item() + 1
+    else:
+      array_size = max(pred_graph.max().item(), truth_graph.max().item()) + 1
 
     if torch.is_tensor(pred_graph):
         l1 = pred_graph.cpu().numpy()
@@ -141,8 +172,8 @@ def graph_intersection(
     e_intersection = e_intersection.tocoo()
     new_pred_graph = torch.from_numpy(
         np.vstack([e_intersection.row, e_intersection.col])
-    ).long()  # .to(device)
-    y = torch.from_numpy(e_intersection.data > 0)  # .to(device)
+    ).long().to(device)
+    y = torch.from_numpy(e_intersection.data > 0).to(device)
     del e_intersection
 
     if using_weights:

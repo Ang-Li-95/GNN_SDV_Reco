@@ -1,25 +1,29 @@
 gnn_learning_configs:
   # Dataset parameters
-  input_dir: EMB_out
+  #input_dir: EMB_out_0502_2_output/train/
+  #input_dir: EMB_out_0502_2_output_rtest0p15_filtered_newweight/train/
+  input_dir: /scratch-cbe/users/ang.li/EMBOutput_dcut0p1415_filtered/train/
+  #input_dir: EMB_out_0502_2_output_rtest0p1/train/
   output_dir: Datasets/GNN_output
-  pt_signal_cut: 1.
-  pt_background_cut: 1.
-  split: [1000, 92, 91] # Number of [training, validation, testing] examples
+  split: [0.89, 0.1, 0.01] # Number of [training, validation, testing] examples
+  max_events_per_source: 30000
 
   # Model parameters
-  input_dim: 2
+  input_dim: 11
   hidden_dim: 128
   n_layers: 3
-  node_encode_dim: 4
-  edge_encode_dim: 4
-  n_message_passing: 3
+  node_encode_dim: 16
+  edge_encode_dim: 16
+  n_message_passing: 8
+  #edge_weight: dist
+  edge_weight: None 
   edge_cut: 0.5
   seed: 1
-  lr: 0.001
-  factor: 0.7
-  patience: 4
+  lr: 0.00005
+  factor: 0.9
+  patience: 20
   margin: 0.1
   activation: ReLU
   layernorm: True
   weight: 1
-  max_epochs: 2
+  max_epochs: 200

@@ -3,8 +3,8 @@ import sys
 
 sys.path.append("/users/ang.li/public/SoftDV/ML/GNN_SDV_Reco/")
 
-#import lightning as L
-import pytorch_lightning as L
+import lightning as L
+#import pytorch_lightning as L
 import torch
 from torch_geometric.loader import DataLoader
 #from Networks.utils import mlp, build_edges, split_dataset, graph_intersection
@@ -26,7 +26,7 @@ class Embedding(L.LightningModule):
     This prepares the data.
     stage can be 'fit', 'validate', 'test', or 'predict'.
     """
-    self.trainset, self.valset, self.testset = split_dataset(input_dir=self.hparams['input_dir'],split=self.hparams['split'],seed=self.hparams['seed'])
+    self.trainset, self.valset, self.testset = split_dataset(input_dir=self.hparams['input_dir'],split=self.hparams['split'],seed=self.hparams['seed'],max_events_per_source=self.hparams['max_events_per_source'])
 
   def train_dataloader(self):
       if len(self.trainset) > 0:
@@ -73,7 +73,10 @@ class Embedding(L.LightningModule):
     """
     The forward method for pytorch modules. Will be used when making prediction.
     """
-    out = self.network(x)
+    scale_mean = torch.tensor([1.6466, -0.0012, -0.0039, -0.1067, 0.0449, -0.0283, 0.1674, 12.7531, 0.0178, 1.1603, 14.7395])
+    scale_std = torch.tensor([3.4727, 0.7561, 1.8255, 4.6112, 0.0789, 10.1196, 0.5957, 56.4042, 0.0412, 0.7702, 4.3868])
+    scale_x = (x-scale_mean)/scale_std
+    out = self.network(scale_x)
     
     return out
 
@@ -81,8 +84,9 @@ class Embedding(L.LightningModule):
     """
     This step trains the network
     """
-    x = batch.x
+    x = batch.x.float()
     emb_out = self(x)
+    emb_out = emb_out.to(self.device)
 
     # Calculate the Hinge loss
     # Initiate an empty edge list
@@ -107,26 +111,55 @@ class Embedding(L.LightningModule):
     # FIXME: But is this really needed?
     node_include = edges.unique()
     emb_out[node_include] = self(x[node_include])
+    emb_out = emb_out.to(self.device)
 
     hinge, d = self.get_hinge_distance(emb_out,edges,edge_labels)
 
-    negative_loss = torch.nn.functional.hinge_embedding_loss(
-        d[hinge == -1],
-        hinge[hinge == -1],
-        margin=self.hparams["margin"]**2,
-        reduction="mean",
-    )
+    if hinge[hinge == -1].shape[0]==0:
+      negative_loss = torch.tensor([0])
+    else:
+      negative_loss = torch.nn.functional.hinge_embedding_loss(
+          d[hinge == -1],
+          hinge[hinge == -1],
+          margin=self.hparams["margin"]**2,
+          reduction="mean",
+      )
 
-    positive_loss = torch.nn.functional.hinge_embedding_loss(
-        d[hinge == 1],
-        hinge[hinge == 1],
-        margin=self.hparams["margin"]**2,
-        reduction="mean",
-    )
+    if d[hinge == 1].shape[0]==0:
+      positive_loss = torch.tensor([0])
+    else:
+      positive_loss = torch.nn.functional.hinge_embedding_loss(
+          d[hinge == 1],
+          hinge[hinge == 1],
+          margin=self.hparams["margin"]**2,
+          reduction="mean",
+      )
 
     loss = negative_loss + self.hparams["weight"] * positive_loss
 
-    self.log("train_loss", loss, on_epoch=True, on_step=False, batch_size=1)
+    # Below calculates the loss similar with val
+    # Calculate the Hinge loss
+    # For each query nodes, build edges between the node and all nodes 
+    edges_val = build_edges(emb_out, emb_out, indices=None, r_max=self.hparams['r_max'], k_max=self.hparams['k_max'])
+
+    # Now we build the truth graph
+    #true_edges = torch.cat([batch.true_edges,batch.true_edges.flip(0)], axis=-1)
+    edges_val, edge_labels_val = graph_intersection(edges_val, true_edges)
+
+    hinge_val, d_val = self.get_hinge_distance(emb_out,edges_val,edge_labels_val)
+
+    if hinge_val.shape[0]==0:
+      loss_val = torch.tensor([0])
+    else:
+      loss_val = torch.nn.functional.hinge_embedding_loss(
+          d_val,
+          hinge_val,
+          margin=self.hparams["margin"]**2,
+          reduction="mean",
+      )
+
+    #self.log("train_loss", loss, on_epoch=True, on_step=False, batch_size=1,prog_bar=True)
+    self.log_dict({"train_loss": loss, "train_loss_val": loss_val}, on_epoch=True, on_step=False, batch_size=1,prog_bar=True, sync_dist=True)
 
     return loss
 
@@ -151,9 +184,9 @@ class Embedding(L.LightningModule):
     truth edges in the latent space
     """
     # Append edges
-    edges = torch.cat([edges.to(self.device),truth_edges], axis=-1)
+    edges = torch.cat([edges.to(self.device),truth_edges.to(self.device)], axis=-1)
     # Append edge labels
-    edge_labels = torch.cat([edge_labels.int(), torch.ones(truth_edges.shape[1])])
+    edge_labels = torch.cat([edge_labels.int().to(self.device), torch.ones(truth_edges.shape[1]).to(self.device)])
     return edges, edge_labels
 
   def get_query_points(self,batch,latent):
@@ -176,8 +209,8 @@ class Embedding(L.LightningModule):
     hinge = edge_labels.float().to(self.device)
     hinge[hinge==0] = -1
 
-    sender_nodes = emb.index_select(0,edges[0])
-    receiver_nodes = emb.index_select(0,edges[1])
+    sender_nodes = emb.index_select(0,edges[0]).to(self.device)
+    receiver_nodes = emb.index_select(0,edges[1]).to(self.device)
     d = torch.sum((sender_nodes-receiver_nodes)**2,dim=-1)
 
     return hinge, d
@@ -186,8 +219,9 @@ class Embedding(L.LightningModule):
     """
     This evaluates the network, will be used in the validation and testing
     """
-    x = batch.x
+    x = batch.x.float()
     emb_out = self(x)
+    emb_out = emb_out.to(self.device)
 
     # Calculate the Hinge loss
     # For each query nodes, build edges between the node and all nodes 
@@ -200,16 +234,45 @@ class Embedding(L.LightningModule):
 
     hinge, d = self.get_hinge_distance(emb_out,edges,edge_labels)
 
-    loss = torch.nn.functional.hinge_embedding_loss(
-        d,
-        hinge,
-        margin=self.hparams["margin"]**2,
-        reduction="mean",
-    )
+    if hinge.shape[0]==0:
+      loss = torch.tensor([0])
+    else:
+      loss = torch.nn.functional.hinge_embedding_loss(
+          d,
+          hinge,
+          margin=self.hparams["margin"]**2,
+          reduction="mean",
+      )
+    #if torch.isnan(loss).any():
+    #  print("NAN in loss")
+    #  print("d")
+    #  print(d)
+    #  print("hinge")
+    #  print(hinge)
+
+    if hinge[hinge == -1].shape[0]==0:
+      negative_loss = torch.tensor([0])
+    else:
+      negative_loss = torch.nn.functional.hinge_embedding_loss(
+          d[hinge == -1],
+          hinge[hinge == -1],
+          margin=self.hparams["margin"]**2,
+          reduction="mean",
+      )
+    if d[hinge == 1].shape[0]==0:
+      positive_loss = torch.tensor([0])
+    else:
+      positive_loss = torch.nn.functional.hinge_embedding_loss(
+          d[hinge == 1],
+          hinge[hinge == 1],
+          margin=self.hparams["margin"]**2,
+          reduction="mean",
+      )
+    loss_nom = negative_loss + self.hparams["weight"] * positive_loss
 
     n_true_edges = true_edges.shape[1]
     n_true_positives = edge_labels.sum()
-    n_edges_pred = len(edges)
+    n_edges_pred = len(edges[0])
 
     eff = n_true_positives / n_true_edges
     pur = n_true_positives / n_edges_pred
@@ -217,16 +280,17 @@ class Embedding(L.LightningModule):
     if log:
         current_lr = self.optimizers().param_groups[0]["lr"]
         self.log_dict(
-            {"val_loss": loss, "eff": eff, "pur": pur, "current_lr": current_lr},
+            {"val_loss": loss, "val_loss_nom": loss_nom, "eff": eff, "pur": pur, "current_lr": current_lr},
             on_epoch=True,
             on_step=False,
-            batch_size=1
+            batch_size=1,
+            prog_bar=False,
+            sync_dist=True,
         )
 
     if verbose:
         logging.info("Efficiency: {}".format(eff))
         logging.info("Purity: {}".format(pur))
-        logging.info(batch.event_file)
 
     return {
         "loss": loss,
@@ -244,7 +308,7 @@ class Embedding(L.LightningModule):
       """
 
       outputs = self.evaluate_network(
-          batch, batch_idx, self.hparams["r_val"], 150, log=True
+          batch, batch_idx, self.hparams["r_val"], 150, log=True, verbose=False
       )
 
       return outputs["loss"]
