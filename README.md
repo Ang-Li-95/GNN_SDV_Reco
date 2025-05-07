@@ -21,11 +21,11 @@ The hyper-parameters are set by `yaml` config files. One can adjust the input/ou
 ## Embedding network
 - To train locally:
 ```
-python train_Emb.py
+python train_EMB.py
 ```
 - To train on slurm (the script below needs to be modified for different training process):
 ```
-./submit_training.sh
+sbatch submit_training.sh
 ```
 - After training, run inference to get the graph:
 ```
@@ -47,7 +47,7 @@ python train_GNN.py
 ```
 - To train on slurm (the script below needs to be modified for different training process):
 ```
-./submit_training.sh
+sbatch submit_training.sh
 ```
 - Inference
 ```
