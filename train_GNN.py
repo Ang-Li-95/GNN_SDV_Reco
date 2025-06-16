@@ -21,7 +21,7 @@ with open('gnn_config.yaml') as c:
 
 model = InteractionNetwork(config)
 
-save_directory = os.path.join("GNN_0607_1")
+save_directory = os.path.join(config['output_dir'])
 os.makedirs(save_directory, exist_ok=True)
 
 # saves top-K checkpoints based on "val_loss" metric

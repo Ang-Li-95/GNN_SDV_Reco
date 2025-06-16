@@ -45,19 +45,23 @@ for s in os.listdir(args.input_dir):
   #arrs = t.arrays(input_features+['SDVTrack_LLPIdx'], library='np')
   
   datas = []
-  for arrs in uproot.iterate(inputname+"/*.root:Events",input_features+['SDVTrack_LLPIdx'], library='np'):
-    for i in range(len(arrs['SDVTrack_LLPIdx'])):
+  geninfo = 'SDVTrack_GenSecVtxIdx'
+  for arrs in uproot.iterate(inputname+"/*.root:Events",input_features+[geninfo], library='np'):
+    # For each event
+    for i in range(len(arrs[geninfo])):
       features = [arrs[s][i] for s in input_features] 
       testx = np.array(features).T
       #testx = np.array([arrs['SDVTrack_pt'][i],arrs['SDVTrack_eta'][i]]).T
       edges = [np.array([[],[]])]
-      temp = arrs['SDVTrack_LLPIdx'][i]
-      w0 = np.where(temp==0)[0]
-      w1 = np.where(temp==1)[0]
-      if len(w0)>1:
-          edges.append(make_edges(w0))
-      if len(w1)>1:
-          edges.append(make_edges(w1))
+      temp = arrs[geninfo][i]
+      if len(temp)==0:
+        continue
+      ws = []
+      for ivtx in range(max(temp)+1):
+        w = np.where(temp==ivtx)[0]
+        ws.append(w)
+        if len(ws[-1])>1:
+          edges.append(make_edges(ws[-1]))
       edges = np.concatenate(edges,axis=1)
       if edges.shape[1]==0:
           continue

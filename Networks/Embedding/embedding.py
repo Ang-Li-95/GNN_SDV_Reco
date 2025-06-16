@@ -105,10 +105,10 @@ class Embedding(L.LightningModule):
 
     # Append truth edges to the edge list
     # FIXME: I think it would be good to remove duplicated edges
-    edges, edge_labels = self.append_true_edges(edges,edge_labels,true_edges)
+    #edges, edge_labels = self.append_true_edges(edges,edge_labels,true_edges)
+    edges, edge_labels = self.append_true_edges(edges[:,edge_labels==False],edge_labels[edge_labels==False],true_edges)
 
     # Rerun the network on all nodes included in edges
-    # FIXME: But is this really needed?
     node_include = edges.unique()
     emb_out[node_include] = self(x[node_include])
     emb_out = emb_out.to(self.device)

@@ -21,7 +21,7 @@ with open('emb_config.yaml') as c:
 
 model = Embedding(config)
 
-save_directory = os.path.join("EMB_0604_1")
+save_directory = os.path.join("EMB_110625_1")
 os.makedirs(save_directory, exist_ok=True)
 
 # saves top-K checkpoints based on "val_loss" metric

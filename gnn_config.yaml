@@ -2,9 +2,10 @@ gnn_learning_configs:
   # Dataset parameters
   #input_dir: EMB_out_0502_2_output/train/
   #input_dir: EMB_out_0502_2_output_rtest0p15_filtered_newweight/train/
-  input_dir: /scratch-cbe/users/ang.li/EMBOutput_dcut0p1415_filtered/train/
+  #input_dir: /scratch-cbe/users/ang.li/EMBOutput_dcut0p1415_filtered/train/
+  input_dir: /scratch-cbe/users/ang.li/SoftDV/GNN_VtxReco/EMBOutput_dcut0p1415_110625_filtered/train/
   #input_dir: EMB_out_0502_2_output_rtest0p1/train/
-  output_dir: Datasets/GNN_output
+  output_dir: GNN_110625
   split: [0.89, 0.1, 0.01] # Number of [training, validation, testing] examples
   max_events_per_source: 30000
 
@@ -20,6 +21,7 @@ gnn_learning_configs:
   edge_cut: 0.5
   seed: 1
   lr: 0.00005
+  l2: 0.1
   factor: 0.9
   patience: 20
   margin: 0.1
